@@ -1,0 +1,921 @@
+import { useState, useRef, useEffect } from 'react';
+import { Send, Sparkles, Mic, MicOff, Languages, BookOpen, MessageCircle, Lightbulb } from 'lucide-react';
+import { sendMessageToAI } from '../../services/gemini';
+import { useSpeechRecognition } from '../../hooks/useSpeechRecognition';
+import { useTheme } from '../../contexts/ThemeContext';
+
+const LANGUAGES = [
+  { code: 'es-ES', name: 'Spanish', flag: '🇪🇸' },
+  { code: 'fr-FR', name: 'French', flag: '🇫🇷' },
+  { code: 'ja-JP', name: 'Japanese', flag: '🇯🇵' },
+  { code: 'ko-KR', name: 'Korean', flag: '🇰🇷' },
+  { code: 'de-DE', name: 'German', flag: '🇩🇪' },
+  { code: 'it-IT', name: 'Italian', flag: '🇮🇹' },
+  { code: 'pt-PT', name: 'Portuguese', flag: '🇵🇹' },
+  { code: 'zh-CN', name: 'Chinese', flag: '🇨🇳' }
+];
+
+export default function AIBuddyWindow() {
+  const { theme } = useTheme();
+  const [targetLanguage, setTargetLanguage] = useState(null);
+  const [currentMode, setCurrentMode] = useState('conversation');
+  const [messages, setMessages] = useState([]);
+  const [inputValue, setInputValue] = useState('');
+  const [isLoading, setIsLoading] = useState(false);
+  const [simpleMode, setSimpleMode] = useState(true); // 5-year-old mode ON by default
+  const messagesEndRef = useRef(null);
+  const { isListening, transcript, isSupported, startListening, stopListening } = useSpeechRecognition(targetLanguage || 'es-ES');
+
+  const scrollToBottom = () => {
+    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+  };
+
+  useEffect(() => {
+    scrollToBottom();
+  }, [messages]);
+
+  useEffect(() => {
+    if (transcript) {
+      // In pronunciation mode, automatically send for evaluation
+      if (currentMode === 'pronunciation') {
+        setInputValue(transcript);
+        // Auto-send for pronunciation feedback
+        setTimeout(() => {
+          handlePronunciationFeedback(transcript);
+        }, 500);
+      } else {
+        setInputValue(transcript);
+      }
+    }
+  }, [transcript]);
+
+  // Language selection on first load
+  useEffect(() => {
+    if (!targetLanguage) {
+      setMessages([{
+        role: 'assistant',
+        content: 'Welcome! 👋 Which language would you like to practice today?',
+        timestamp: Date.now(),
+        isLanguageSelection: true
+      }]);
+    }
+  }, [targetLanguage]);
+
+  const handleLanguageSelect = (lang) => {
+    setTargetLanguage(lang.code);
+    const greetings = {
+      'es-ES': '¡Hola! 📝 (Hello!) Vamos a practicar español juntos. 📝 (Let\'s practice Spanish together.) 😊',
+      'fr-FR': 'Bonjour! 📝 (Hello!) Pratiquons le français ensemble. 📝 (Let\'s practice French together.) 😊',
+      'ja-JP': 'こんにちは！📝 (Hello!) 一緒に日本語を練習しましょう。📝 (Let\'s practice Japanese together.) 😊',
+      'ko-KR': '안녕하세요! 📝 (Hello!) 함께 한국어를 연습해요. 📝 (Let\'s practice Korean together.) 😊',
+      'de-DE': 'Hallo! 📝 (Hello!) Lass uns zusammen Deutsch üben. 📝 (Let\'s practice German together.) 😊',
+      'it-IT': 'Ciao! 📝 (Hello!) Pratichiamo l\'italiano insieme. 📝 (Let\'s practice Italian together.) 😊',
+      'pt-PT': 'Olá! 📝 (Hello!) Vamos praticar português juntos. 📝 (Let\'s practice Portuguese together.) 😊',
+      'zh-CN': '你好！📝 (Hello!) 让我们一起练习中文。📝 (Let\'s practice Chinese together.) 😊'
+    };
+
+    setMessages([{
+      role: 'assistant',
+      content: `${greetings[lang.code]}\n\nI'll help you with conversation, grammar, pronunciation, and translations. Use the buttons below to choose what you'd like to practice! 🎯\n\n🚨 Important: I will teach you ${lang.name} ONLY. All my responses will be in ${lang.name} with English translations.`,
+      timestamp: Date.now()
+    }]);
+  };
+
+  const handlePronunciationFeedback = async (spokenText) => {
+    if (!spokenText || !targetLanguage) return;
+
+    const userMessage = {
+      role: 'user',
+      content: `🎤 "${spokenText}"`,
+      timestamp: Date.now()
+    };
+
+    const newMessages = [...messages, userMessage];
+    setMessages(newMessages);
+    setInputValue('');
+    setIsLoading(true);
+
+    try {
+      const languageName = LANGUAGES.find(l => l.code === targetLanguage)?.name || targetLanguage;
+      
+      const systemPrompt = `You are evaluating pronunciation for a BEGINNER learning ${languageName} (${targetLanguage}).
+
+🚨 CRITICAL: The user is learning ${languageName.toUpperCase()}, not Spanish or any other language!
+
+The user just spoke: "${spokenText}"
+
+Respond with valid JSON:
+{
+  "reply": "Encouraging feedback message with score",
+  "mode": "voice_feedback",
+  "voiceFeedback": {
+    "score": 7,
+    "comment": "Brief overall feedback (max 2 sentences)",
+    "mispronouncedWords": [
+      {"word": "word", "ipa": "pronunciation hint", "tip": "concrete advice"}
+    ]
+  },
+  "sections": [
+    {"type": "pronunciation", "label": "What you said", "content": "${spokenText}"},
+    {"type": "tip", "label": "Pronunciation tip", "content": "specific advice"}
+  ],
+  "followUpQuestion": "Want to try another word?"
+}
+
+Be VERY encouraging. Focus on 1-2 specific improvements. Give a score from 1-10.`;
+
+      const apiMessages = [
+        { role: 'system', content: systemPrompt },
+        { role: 'user', content: `Evaluate my pronunciation: "${spokenText}"` }
+      ];
+
+      const aiContent = await sendMessageToAI(apiMessages);
+      
+      let parsedResponse;
+      try {
+        const jsonMatch = aiContent.match(/\{[\s\S]*\}/);
+        parsedResponse = jsonMatch ? JSON.parse(jsonMatch[0]) : null;
+      } catch (e) {
+        parsedResponse = null;
+      }
+
+      const aiResponse = {
+        role: 'assistant',
+        content: parsedResponse?.reply || aiContent,
+        timestamp: Date.now(),
+        structured: parsedResponse,
+        mode: 'voice_feedback'
+      };
+      
+      setMessages(prev => [...prev, aiResponse]);
+    } catch (error) {
+      console.error('AI Error:', error);
+      const errorResponse = {
+        role: 'assistant',
+        content: 'Sorry, I couldn\'t evaluate that. Please try again! 🙏',
+        timestamp: Date.now()
+      };
+      setMessages(prev => [...prev, errorResponse]);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const handleSend = async (mode = currentMode) => {
+    if (!inputValue.trim() || !targetLanguage) return;
+
+    const userMessage = {
+      role: 'user',
+      content: inputValue,
+      timestamp: Date.now()
+    };
+
+    const newMessages = [...messages, userMessage];
+    setMessages(newMessages);
+    setInputValue('');
+    setIsLoading(true);
+
+    try {
+      // Get language name for better context
+      const languageName = LANGUAGES.find(l => l.code === targetLanguage)?.name || targetLanguage;
+      
+      // Build system prompt with mode and language context
+      const systemPrompt = `🚨🚨🚨 ABSOLUTE CRITICAL INSTRUCTION 🚨🚨🚨
+YOU ARE TEACHING: ${languageName.toUpperCase()} (${targetLanguage})
+
+LANGUAGE RULES (CANNOT BE VIOLATED):
+1. If teaching Korean → Use KOREAN words, NOT Spanish/French/Japanese/etc
+2. If teaching French → Use FRENCH words, NOT Spanish/Korean/Japanese/etc  
+3. If teaching Japanese → Use JAPANESE words, NOT Spanish/Korean/French/etc
+4. NEVER default to Spanish - check the target language first!
+5. Current target: ${languageName} - USE THIS LANGUAGE ONLY
+
+You are an AI Language Buddy teaching ${languageName} (${targetLanguage}).
+
+Current mode: ${mode}
+Target language: ${targetLanguage} (${languageName})
+Simple Mode: ${simpleMode ? 'ON' : 'OFF'}
+
+🚨 CRITICAL RULES FOR ALL MODES:
+
+${simpleMode ? `1. 👶 TEACH LIKE A 5-YEAR-OLD (SIMPLE MODE ON):
+   - Use ONLY simple, common words (no complex vocabulary)
+   - Maximum 5-7 words per sentence in target language
+   - Break complex ideas into tiny, easy pieces
+   - Use lots of emojis (😊 🎉 ⭐ 👍 🌟)
+   - Celebrate EVERY attempt: "Great job!", "You're doing amazing!", "Perfect!"
+   - Explain grammar like: "Think of it like..." with simple comparisons
+
+2. 📝 BILINGUAL FORMAT (MANDATORY):
+   - EVERY sentence in ${languageName} MUST have 📝 (English translation) immediately after
+   - Format: "${languageName} text 📝 (English translation)"
+   - IMPORTANT: Use ${languageName} ONLY, not Spanish or other languages
+   - Example format: "[${languageName} phrase] 📝 (English translation)"
+
+3. 🎯 KEEP IT SUPER SIMPLE:
+   - Target language: 5-7 words maximum per sentence
+   - English explanations: Use words a 5-year-old would understand
+   - No grammar jargon - explain like: "This word means..." or "We say this when..."
+
+4. 🎉 BE ENCOURAGING:
+   - Start responses with: "Great!", "Awesome!", "You're doing so well!"
+   - End with: "Keep going!", "You've got this!", "Amazing progress!"
+   - Use celebration emojis: 🎉 ⭐ 👏 🌟 💪` : `1. 📚 NORMAL TEACHING MODE (SIMPLE MODE OFF):
+   - Use natural, conversational language
+   - Sentences can be longer (10-15 words)
+   - Provide more detailed explanations
+   - Still be encouraging but more mature tone
+   - Less emojis, more professional`}
+
+IMPORTANT: Respond with valid JSON only, following this structure:
+{
+  "reply": "main message with target language 📝 (English translation) format",
+  "mode": "${mode}",
+  "targetLanguage": "${targetLanguage}",
+  "sections": [{"type": "...", "label": "...", "content": "..."}],
+  "followUpQuestion": "question in target language 📝 (English translation)"
+}
+
+═══════════════════════════════════════════════════════════
+📚 LEARN MODE (Step-by-Step Lessons) - STRICT 5-PART STRUCTURE
+═══════════════════════════════════════════════════════════
+
+🚨 NEVER SKIP STEPS. EVERY LESSON MUST FOLLOW THIS EXACT ORDER:
+
+(A) TOPIC TITLE
+Format: "Lesson [number]: [Topic Name]"
+Example: "Lesson 1: Greetings & Introductions"
+
+(B) EXPLANATION (1 paragraph only, max 4 lines)
+Simple and clear explanation in ENGLISH.
+
+(C) EXAMPLES (3-5 max)
+Format for EACH example:
+• Phrase: "[word in ${languageName}]"
+• Meaning: "[English translation]"
+• Pronunciation: [phonetic guide]
+
+IMPORTANT: All phrases MUST be in ${languageName}, NOT Spanish or any other language!
+
+(D) MICRO EXERCISE (ONE question only)
+Ask the user ONE simple question.
+NEVER give multiple tasks.
+Example: "Translate this to ${languageName}: Good morning"
+
+(E) FEEDBACK + CONTINUE PROMPT
+After user answers:
+• If correct: "Perfect! 🌟 [optional tip]"
+• If wrong: "Good try! The correct answer is: [answer]"
+Then ALWAYS end with: "Type 'continue' to go to the next lesson."
+
+🚨 NO DRIFTING RULE:
+- Do NOT introduce new lessons unless user says "continue"
+- Stay on current lesson until user is ready
+- One lesson at a time only
+
+═══════════════════════════════════════════════════════════
+💬 CONVERSATION MODE (Chat Practice)
+═══════════════════════════════════════════════════════════
+- Act as a systematic teacher, NOT a chat partner
+- ALWAYS write in ENGLISH first, then show target language with translation
+- Start with: "Great! 🎉 Today's lesson: [topic]"
+- Teach in numbered steps (Step 1, Step 2, Step 3):
+  
+  Step 1: Introduce 2-3 new words
+  - Format: "Word in ${languageName} 📝 (English meaning)"
+  - CRITICAL: Use ${languageName} words ONLY, not Spanish or other languages
+  
+  Step 2: Show how to use it
+  - Give 1-2 example sentences with translations in ${languageName}
+  - Format: "[${languageName} sentence] 📝 (English translation)"
+  
+  Step 3: Practice time
+  - Ask user to type or say the word
+  - Example: "Now you try! Type 'Hola' to practice!"
+  
+  Step 4: Quiz
+  - Ask a simple question in ENGLISH
+  - Example: "How do you say 'Hello' in ${languageName}?"
+  
+  Step 5: Feedback
+  - If correct: "Perfect! 🌟 You got it right!"
+  - If wrong: "Good try! The correct answer is: [word] 📝 (meaning)"
+  
+- Use sections for each step:
+  * {"type": "lesson", "label": "Step 1: New Words", "content": "Hola 📝 (Hello)"}
+  * {"type": "quiz", "label": "Step 3: Your turn!", "content": "Type 'Hola' to practice!"}
+- ALWAYS end with: "Ready for Step [X]? Type 'next' or 'continue'! 🌟"
+- Track progress: "You've learned 5 words today! 🎉"
+- NEVER respond only in target language - ALWAYS include English explanations
+
+Rules:
+- Respond in ${languageName} with 📝 (English translation) after each sentence
+- CRITICAL: Use ${languageName} ONLY, not Spanish or any other language
+- Keep replies SHORT (max 2-3 sentences)
+- Ask ONE follow-up question each time
+- Encourage user to speak more
+
+═══════════════════════════════════════════════════════════
+✏️ GRAMMAR MODE
+═══════════════════════════════════════════════════════════
+
+Structure (4 parts):
+1. Show the corrected sentence
+2. Explain the rule in 1-2 sentences
+3. Give ONE additional example
+4. Ask user to try writing another sentence
+
+═══════════════════════════════════════════════════════════
+🗣️ PRONUNCIATION MODE
+═══════════════════════════════════════════════════════════
+
+For text:
+- Provide IPA notation
+- Describe tongue/mouth placement
+- Give slow phonetic breakdown
+
+For voice (audio):
+- Provide score from 1-10
+- Highlight mispronounced parts
+- Show corrected pronunciation
+- Provide repeat-after-me sentence
+
+═══════════════════════════════════════════════════════════
+🎭 SCENARIO MODE (Practice Scenarios)
+═══════════════════════════════════════════════════════════
+
+Available scenarios:
+• Restaurant • Airport • Grocery Store • Business Meeting • Dating/Social • Emergency
+
+Rules:
+- AI plays the role in the scenario
+- Keep conversation realistic
+- Ask ONE question at a time
+- Give corrections only when asked or when user makes big mistake
+- End each turn with natural next question
+- Every line must have 📝 (English translation)
+
+═══════════════════════════════════════════════════════════
+📖 VOCABULARY BUILDER MODE
+═══════════════════════════════════════════════════════════
+
+Track:
+- New words user learns
+- Mistakes they repeat
+- Words they struggle with
+
+Each vocab entry must include:
+• Word in ${languageName}
+• English translation
+• Example sentence with translation in ${languageName}
+• Pronunciation guide
+• Optional mini-quiz
+
+When user has 10+ words → offer quiz:
+"Would you like a 10-word review quiz?"
+
+═══════════════════════════════════════════════════════════
+🔄 TRANSLATE MODE (Translation + Reverse Learning)
+═══════════════════════════════════════════════════════════
+
+MUST return 4 things:
+1. Direct translation
+2. Simplified version (Beginner-friendly)
+3. Advanced version (B2+ level)
+4. Grammar spotlight (Explain one word or rule)
+
+═══════════════════════════════════════════════════════════
+⚠️ GENERAL RULES (APPLY TO ALL MODES)
+═══════════════════════════════════════════════════════════
+
+Rule 1: NEVER MIX MODES
+- If user is in "Learn Mode", stay in Learn Mode until they switch
+- Don't jump to chat or practice unless asked
+
+Rule 2: ONE QUESTION AT A TIME
+- Never give multiple tasks
+- Wait for user input before proceeding
+
+Rule 3: KEEP PARAGRAPHS SHORT
+- Maximum 4 lines per paragraph
+- Use bullet points for lists
+
+Rule 4: NO OVERWHELMING
+- Small chunks only
+- Always wait for user input
+- Don't dump information
+
+Rule 5: BE FRIENDLY & SUPPORTIVE
+- Tone like a fun tutor, not a textbook
+- Celebrate small wins
+- Encourage mistakes as learning opportunities
+
+═══════════════════════════════════════════════════════════
+📋 EXAMPLE RESPONSES
+═══════════════════════════════════════════════════════════
+
+LEARN MODE Example:
+{
+  "reply": "Lesson 1: Greetings & Introductions\n\nIn ${languageName}, greetings are important! Let's start with the basics.",
+  "mode": "learn",
+  "sections": [
+    {"type": "lesson", "label": "(A) Topic", "content": "Lesson 1: Basic Greetings"},
+    {"type": "lesson", "label": "(B) Explanation", "content": "Greetings are how we say hello. In ${languageName}, there are different ways to greet people depending on the time of day."},
+    {"type": "lesson", "label": "(C) Examples", "content": "• Phrase: '[greeting in ${languageName}]'\n• Meaning: 'Hello'\n• Pronunciation: [phonetic]\n\n• Phrase: '[good morning in ${languageName}]'\n• Meaning: 'Good morning'\n• Pronunciation: [phonetic]"},
+    {"type": "quiz", "label": "(D) Exercise", "content": "Translate this to ${languageName}: Good morning"},
+    {"type": "tip", "label": "(E) Next Step", "content": "Type your answer above!"}
+  ],
+  "followUpQuestion": "After you answer, type 'continue' for the next lesson! 🌟"
+}
+
+CONVERSATION MODE Example (use ${languageName}, NOT Spanish):
+{
+  "reply": "[Hello in ${languageName}] 📝 (Hello!) [How are you in ${languageName}] 📝 (How are you?)",
+  "mode": "conversation",
+  "sections": [
+    {"type": "tip", "label": "Better phrase", "content": "Use proper ${languageName} grammar for 'I'm good'"}
+  ],
+  "followUpQuestion": "[What did you do today in ${languageName}] 📝 (What did you do today?)"
+}
+
+TRANSLATE MODE Example (use ${languageName}):
+{
+  "reply": "Here's your translation:",
+  "mode": "translate",
+  "sections": [
+    {"type": "translation", "label": "Direct", "content": "[Translation in ${languageName}]"},
+    {"type": "simple", "label": "Simpler", "content": "[Simpler version in ${languageName}]"},
+    {"type": "advanced", "label": "Advanced", "content": "[Advanced version in ${languageName}]"},
+    {"type": "grammar-note", "label": "Grammar", "content": "Grammar explanation about ${languageName}"}
+  ]
+}
+
+Example CONVERSATION response (5-year-old style, use ${languageName}):
+{
+  "reply": "Great job! 🎉 Let me help you! [Hello in ${languageName}] 📝 (Hello!) [How are you in ${languageName}] 📝 (How are you?) 😊",
+  "mode": "conversation",
+  "sections": [
+    {"type": "tip", "label": "Better way to say it", "content": "Use proper ${languageName} grammar. Think of it like 'I am' in English! 😊"},
+    {"type": "tip", "label": "Say it like this", "content": "[Pronunciation guide for ${languageName}]"}
+  ],
+  "followUpQuestion": "[What did you do today in ${languageName}] 📝 (What did you do today?) Tell me about your day! 🌟"
+}
+
+Example SCENARIO response (ask topic first, use ${languageName}):
+{
+  "reply": "[Perfect in ${languageName}] 📝 (Perfect!) What would you like to practice? 🎯\n\n🍽️ Restaurant\n🛒 Shopping\n✈️ Airport\n🏥 Doctor\n💼 Work\n\nJust tell me which one!",
+  "mode": "scenario",
+  "followUpQuestion": "Which topic interests you?"
+}
+
+Example VOCAB_BUILDER response (use ${languageName}):
+{
+  "reply": "Let's review some words you've been learning! 📚",
+  "mode": "vocab_builder",
+  "vocabUpdates": [
+    {"word": "[hello in ${languageName}]", "meaning": "hello", "example": "[Hello friend in ${languageName}] 📝 (Hello, friend)", "difficulty": "easy"},
+    {"word": "[thank you in ${languageName}]", "meaning": "thank you", "example": "[Thanks for everything in ${languageName}] 📝 (Thanks for everything)", "difficulty": "easy"}
+  ],
+  "sections": [
+    {"type": "quiz", "label": "Quick quiz", "content": "How do you say 'hello' in ${languageName}?"}
+  ],
+  "followUpQuestion": "Try using one of these words in a sentence!"
+}
+
+Keep responses concise, encouraging, and beginner-friendly with lots of English support.
+
+🚨🚨🚨 FINAL CRITICAL REMINDER 🚨🚨🚨
+YOU ARE TEACHING ${languageName.toUpperCase()} (${targetLanguage})!
+- ALL target language content MUST be in ${languageName}
+- Do NOT use Spanish, French, Korean, Japanese, German, Italian, Portuguese, or Chinese UNLESS that is the target language
+- If teaching Korean, use Korean. If teaching French, use French. If teaching Japanese, use Japanese.
+- NEVER mix languages or default to Spanish
+- Check every single phrase before responding - is it in ${languageName}?`;
+
+      // Convert to API format
+      const apiMessages = [
+        { role: 'system', content: systemPrompt },
+        ...newMessages.filter(m => !m.isLanguageSelection).map(({ role, content }) => ({ role, content }))
+      ];
+
+      const aiContent = await sendMessageToAI(apiMessages);
+      
+      // Try to parse JSON response
+      let parsedResponse;
+      try {
+        // Extract JSON from response (in case there's extra text)
+        const jsonMatch = aiContent.match(/\{[\s\S]*\}/);
+        parsedResponse = jsonMatch ? JSON.parse(jsonMatch[0]) : null;
+      } catch (e) {
+        console.log('Failed to parse JSON, using plain text');
+        parsedResponse = null;
+      }
+
+      const aiResponse = {
+        role: 'assistant',
+        content: parsedResponse?.reply || aiContent,
+        timestamp: Date.now(),
+        structured: parsedResponse,
+        mode: parsedResponse?.mode || mode
+      };
+      
+      setMessages(prev => [...prev, aiResponse]);
+    } catch (error) {
+      console.error('AI Error:', error);
+      const errorResponse = {
+        role: 'assistant',
+        content: 'Sorry, I encountered an error. Please try again! 🙏',
+        timestamp: Date.now()
+      };
+      setMessages(prev => [...prev, errorResponse]);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const handleModeChange = (mode, promptText) => {
+    setCurrentMode(mode);
+    if (promptText) {
+      setInputValue(promptText);
+    }
+  };
+
+  const modeButtons = [
+    { 
+      mode: 'learn', 
+      icon: Sparkles, 
+      label: 'Learn', 
+      color: '#9B59B6',
+      prompt: 'Start teaching me step by step'
+    },
+    { 
+      mode: 'conversation', 
+      icon: MessageCircle, 
+      label: 'Chat', 
+      color: '#A8E6CF',
+      prompt: ''
+    },
+    { 
+      mode: 'translate', 
+      icon: Languages, 
+      label: 'Translate', 
+      color: '#FF6B6B',
+      prompt: ''
+    },
+    { 
+      mode: 'grammar', 
+      icon: BookOpen, 
+      label: 'Grammar', 
+      color: '#4ECDC4',
+      prompt: ''
+    },
+    { 
+      mode: 'pronunciation', 
+      icon: Mic, 
+      label: 'Pronunciation', 
+      color: '#95E1D3',
+      prompt: ''
+    },
+    { 
+      mode: 'scenario', 
+      icon: Lightbulb, 
+      label: 'Practice', 
+      color: '#F38181',
+      prompt: 'What topic would you like to practice? (restaurant, shopping, travel, etc.)'
+    },
+    { 
+      mode: 'vocab_builder', 
+      icon: BookOpen, 
+      label: 'Vocab', 
+      color: '#FFD93D',
+      prompt: 'Review my vocabulary'
+    }
+  ];
+
+  // Render structured response sections
+  const renderStructuredMessage = (msg) => {
+    if (!msg.structured) {
+      return <div style={{ whiteSpace: 'pre-wrap', overflowWrap: 'anywhere', wordBreak: 'normal' }}>{msg.content}</div>;
+    }
+
+    const { reply, sections, followUpQuestion } = msg.structured;
+
+    return (
+      <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+        <div style={{ whiteSpace: 'pre-wrap', overflowWrap: 'anywhere', wordBreak: 'normal' }}>{reply}</div>
+        
+        {sections && sections.length > 0 && (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+            {sections.map((section, idx) => (
+              <div 
+                key={idx}
+                style={{
+                  padding: '8px 12px',
+                  background: 'rgba(255,255,255,0.5)',
+                  borderRadius: '6px',
+                  borderLeft: '3px solid #0066FF',
+                  fontSize: '13px'
+                }}
+              >
+                <div style={{ fontWeight: 'bold', marginBottom: '4px', fontSize: '11px', opacity: 0.7 }}>
+                  {section.label}
+                </div>
+                <div style={{ whiteSpace: 'pre-wrap', overflowWrap: 'anywhere', wordBreak: 'normal' }}>
+                  {section.content}
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+
+        {followUpQuestion && (
+          <div style={{ 
+            padding: '8px 12px', 
+            background: 'rgba(0,102,255,0.1)', 
+            borderRadius: '6px',
+            fontSize: '13px',
+            fontStyle: 'italic',
+            whiteSpace: 'pre-wrap',
+            overflowWrap: 'anywhere',
+            wordBreak: 'normal'
+          }}>
+            💭 {followUpQuestion}
+          </div>
+        )}
+      </div>
+    );
+  };
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', height: '100%', background: theme.chatBg || '#FFFFFF' }}>
+      {/* Language Selection Screen */}
+      {!targetLanguage && (
+        <div style={{ 
+          flex: 1, 
+          display: 'flex', 
+          flexDirection: 'column', 
+          alignItems: 'center', 
+          justifyContent: 'center',
+          padding: '20px',
+          gap: '20px'
+        }}>
+          <div style={{ fontSize: '18px', fontWeight: 'bold', textAlign: 'center' }}>
+            Welcome! 👋<br/>Which language would you like to practice?
+          </div>
+          <div style={{ 
+            display: 'grid', 
+            gridTemplateColumns: 'repeat(2, 1fr)', 
+            gap: '12px',
+            maxWidth: '400px',
+            width: '100%'
+          }}>
+            {LANGUAGES.map(lang => (
+              <button
+                key={lang.code}
+                onClick={() => handleLanguageSelect(lang)}
+                style={{
+                  padding: '16px',
+                  background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
+                  color: '#fff',
+                  border: 'none',
+                  borderRadius: '12px',
+                  cursor: 'pointer',
+                  fontSize: '14px',
+                  fontWeight: 'bold',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  alignItems: 'center',
+                  gap: '8px',
+                  transition: 'transform 0.2s',
+                  boxShadow: '0 4px 6px rgba(0,0,0,0.1)'
+                }}
+                onMouseEnter={(e) => e.currentTarget.style.transform = 'scale(1.05)'}
+                onMouseLeave={(e) => e.currentTarget.style.transform = 'scale(1)'}
+              >
+                <span style={{ fontSize: '32px' }}>{lang.flag}</span>
+                <span>{lang.name}</span>
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Main Chat Interface */}
+      {targetLanguage && (
+        <>
+          {/* Messages */}
+          <div style={{ 
+            flex: 1, 
+            overflowY: 'auto', 
+            padding: '16px', 
+            display: 'flex', 
+            flexDirection: 'column', 
+            gap: '16px' 
+          }}>
+            {messages.map((msg, idx) => (
+              <div key={idx} style={{ display: 'flex', justifyContent: msg.role === 'user' ? 'flex-end' : 'flex-start' }}>
+                <div style={{
+                  maxWidth: '85%',
+                  padding: '12px 16px',
+                  borderRadius: '12px',
+                  background: msg.role === 'user' 
+                    ? theme.accent || '#0066FF'
+                    : 'rgba(0, 102, 255, 0.08)',
+                  color: msg.role === 'user' ? '#fff' : theme.textColor || '#000',
+                  fontSize: '14px'
+                }}>
+                  {msg.role === 'assistant' && (
+                    <Sparkles size={16} style={{ display: 'inline', marginRight: '6px', opacity: 0.7 }} />
+                  )}
+                  {renderStructuredMessage(msg)}
+                </div>
+              </div>
+            ))}
+            {isLoading && (
+              <div style={{ display: 'flex', justifyContent: 'flex-start' }}>
+                <div style={{ 
+                  padding: '12px 16px', 
+                  borderRadius: '12px', 
+                  background: 'rgba(0, 102, 255, 0.08)',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '8px'
+                }}>
+                  <Sparkles size={16} className="sparkle-animation" />
+                  <span>Thinking...</span>
+                </div>
+              </div>
+            )}
+            <div ref={messagesEndRef} />
+          </div>
+
+          {/* Mode Buttons */}
+          <div style={{ 
+            padding: '12px', 
+            borderTop: `1px solid ${theme.windowBorder || 'rgba(0,0,0,0.1)'}`,
+            display: 'flex', 
+            gap: '8px', 
+            flexWrap: 'wrap',
+            background: theme.toolbarBg || '#F5F5F5',
+            alignItems: 'center'
+          }}>
+            {/* Simple Mode Toggle */}
+            <button
+              onClick={() => setSimpleMode(!simpleMode)}
+              style={{
+                padding: '8px 14px',
+                background: simpleMode ? '#FFB6C1' : 'rgba(0,0,0,0.05)',
+                color: simpleMode ? '#fff' : '#333',
+                border: `2px solid ${simpleMode ? '#FFB6C1' : 'transparent'}`,
+                borderRadius: '20px',
+                cursor: 'pointer',
+                fontSize: '12px',
+                fontWeight: simpleMode ? 'bold' : 'normal',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '6px',
+                transition: 'all 0.2s'
+              }}
+              title={simpleMode ? 'Simple mode ON - Teaching like a 5-year-old' : 'Simple mode OFF - Normal teaching'}
+            >
+              👶 {simpleMode ? 'Simple' : 'Normal'}
+            </button>
+
+            <div style={{ 
+              width: '1px', 
+              height: '24px', 
+              background: 'rgba(0,0,0,0.2)',
+              margin: '0 4px'
+            }} />
+
+            {modeButtons.map((btn) => {
+              const Icon = btn.icon;
+              const isActive = currentMode === btn.mode;
+              return (
+                <button 
+                  key={btn.mode} 
+                  onClick={() => handleModeChange(btn.mode, btn.prompt)}
+                  style={{
+                    padding: '8px 14px',
+                    background: isActive ? btn.color : 'rgba(0,0,0,0.05)',
+                    color: isActive ? '#fff' : '#333',
+                    border: `2px solid ${isActive ? btn.color : 'transparent'}`,
+                    borderRadius: '20px',
+                    cursor: 'pointer',
+                    fontSize: '12px',
+                    fontWeight: isActive ? 'bold' : 'normal',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '6px',
+                    transition: 'all 0.2s'
+                  }}
+                  onMouseEnter={(e) => {
+                    if (!isActive) {
+                      e.currentTarget.style.background = 'rgba(0,0,0,0.1)';
+                    }
+                  }}
+                  onMouseLeave={(e) => {
+                    if (!isActive) {
+                      e.currentTarget.style.background = 'rgba(0,0,0,0.05)';
+                    }
+                  }}
+                >
+                  <Icon size={14} />
+                  {btn.label}
+                </button>
+              );
+            })}
+          </div>
+
+          {/* Input */}
+          <div style={{ 
+            borderTop: `1px solid ${theme.windowBorder || 'rgba(0,0,0,0.1)'}`,
+            padding: '12px', 
+            display: 'flex', 
+            gap: '8px',
+            background: theme.toolbarBg || '#F5F5F5'
+          }}>
+            <input 
+              type="text" 
+              value={inputValue} 
+              onChange={(e) => setInputValue(e.target.value)}
+              onKeyPress={(e) => e.key === 'Enter' && !isLoading && handleSend()} 
+              placeholder={`Type in ${LANGUAGES.find(l => l.code === targetLanguage)?.name || 'your language'}...`}
+              style={{ 
+                flex: 1, 
+                padding: '10px 12px', 
+                border: '2px solid rgba(0,0,0,0.1)', 
+                borderRadius: '8px', 
+                fontSize: '14px', 
+                outline: 'none',
+                background: '#fff'
+              }}
+              disabled={isLoading}
+            />
+            {isSupported && (
+              <button 
+                onClick={isListening ? stopListening : startListening}
+                style={{
+                  padding: '10px 12px', 
+                  background: isListening ? '#FF4444' : currentMode === 'pronunciation' ? '#95E1D3' : 'rgba(0,102,255,0.1)', 
+                  color: isListening ? '#fff' : currentMode === 'pronunciation' ? '#000' : '#0066FF',
+                  border: `2px solid ${isListening ? '#FF4444' : currentMode === 'pronunciation' ? '#95E1D3' : 'rgba(0,102,255,0.3)'}`,
+                  borderRadius: '8px', 
+                  cursor: 'pointer', 
+                  display: 'flex', 
+                  alignItems: 'center',
+                  position: 'relative'
+                }}
+                title={currentMode === 'pronunciation' 
+                  ? (isListening ? 'Stop recording - will evaluate pronunciation' : 'Record for pronunciation evaluation') 
+                  : (isListening ? 'Stop recording' : 'Voice input')}
+              >
+                {isListening ? <MicOff size={18} /> : <Mic size={18} />}
+                {currentMode === 'pronunciation' && !isListening && (
+                  <span style={{
+                    position: 'absolute',
+                    top: '-4px',
+                    right: '-4px',
+                    width: '12px',
+                    height: '12px',
+                    background: '#95E1D3',
+                    borderRadius: '50%',
+                    border: '2px solid #fff'
+                  }} />
+                )}
+              </button>
+            )}
+            <button 
+              onClick={() => handleSend()} 
+              disabled={isLoading || !inputValue.trim()}
+              style={{
+                padding: '10px 18px', 
+                background: isLoading || !inputValue.trim() ? '#ccc' : theme.accent || '#0066FF', 
+                color: '#fff', 
+                border: 'none',
+                borderRadius: '8px', 
+                cursor: isLoading || !inputValue.trim() ? 'not-allowed' : 'pointer', 
+                display: 'flex', 
+                alignItems: 'center', 
+                gap: '6px',
+                fontWeight: 'bold'
+              }}
+            >
+              <Send size={16} />
+            </button>
+          </div>
+        </>
+      )}
+
+      <style>{`
+        @keyframes sparkle {
+          0%, 100% { opacity: 1; transform: scale(1); }
+          50% { opacity: 0.5; transform: scale(0.8); }
+        }
+        .sparkle-animation {
+          animation: sparkle 1.5s ease-in-out infinite;
+        }
+      `}</style>
+    </div>
+  );
+}

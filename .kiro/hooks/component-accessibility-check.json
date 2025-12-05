@@ -1,0 +1,9 @@
+{
+  "name": "Component Accessibility Check",
+  "description": "Ensures React components follow accessibility best practices when saved",
+  "eventType": "fileEdited",
+  "filePatterns": "lingo-app/src/components/**/*.jsx",
+  "hookAction": "askAgent",
+  "outputPrompt": "♿ ACCESSIBILITY CHECK - Component modified!\n\nPlease review the modified component for accessibility compliance:\n\n1. **Semantic HTML** - Are proper semantic elements used (button, nav, main, etc.)?\n2. **ARIA labels** - Do interactive elements have proper aria-label or aria-labelledby?\n3. **Keyboard navigation** - Can all interactive elements be accessed via keyboard?\n4. **Focus management** - Is focus properly managed in modals and dynamic content?\n5. **Color contrast** - Do text and background colors meet WCAG AA standards?\n6. **Alt text** - Do images have descriptive alt attributes?\n7. **Form labels** - Are form inputs properly labeled?\n8. **Screen reader support** - Will screen readers understand the component structure?\n\nProvide a brief accessibility report with:\n✅ Good practices found\n⚠️ Potential improvements\n🚨 Critical accessibility issues\n\nBe concise and actionable.",
+  "command": ""
+}

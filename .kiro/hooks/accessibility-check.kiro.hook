@@ -1,0 +1,8 @@
+{
+  "name": "Accessibility Review",
+  "description": "Reviews UI components for accessibility compliance when modified",
+  "eventType": "fileEdited",
+  "filePatterns": "lingo-app/src/components/**/*.jsx",
+  "hookAction": "askAgent",
+  "outputPrompt": "♿ Accessibility check for {filename}\n\nReview the component for:\n- Proper ARIA labels and roles\n- Keyboard navigation support (tab order, enter/space handlers)\n- Color contrast ratios\n- Alt text for images\n- Focus indicators\n- Screen reader compatibility\n\nSuggest improvements if any accessibility issues are found."
+}

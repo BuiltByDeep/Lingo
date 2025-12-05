@@ -1,0 +1,18 @@
+{
+  "enabled": true,
+  "name": "Firebase Security Audit",
+  "description": "Triggers a security audit when Firebase configuration files (firebase.js, auth.js, or .env) are saved to ensure API keys are not hardcoded, environment variables are properly used, .env is in .gitignore, and Firebase security rules are configured",
+  "version": "1",
+  "when": {
+    "type": "fileEdited",
+    "patterns": [
+      "lingo-app/src/services/firebase.js",
+      "lingo-app/src/services/auth.js",
+      "lingo-app/.env"
+    ]
+  },
+  "then": {
+    "type": "askAgent",
+    "prompt": "🔒 SECURITY ALERT - Firebase file modified!\n\nPlease perform a comprehensive security audit and check the following:\n\n1. **No API keys hardcoded in source** - Verify that firebase.js and auth.js do not contain any hardcoded API keys, secrets, or credentials\n2. **All keys use import.meta.env.VITE_* format** - Ensure all Firebase configuration values are loaded from environment variables using the proper Vite format (import.meta.env.VITE_*)\n3. **.env is in .gitignore** - Confirm that .env is listed in .gitignore to prevent accidental commits of sensitive data\n4. **.env.example has placeholders only** - Verify that .env.example contains only placeholder values (no real credentials)\n5. **Firebase security rules configured** - Check if Firebase Realtime Database and Authentication security rules are properly configured\n\nAfter your audit, run: `git status`\n\n**CRITICAL**: Ensure .env is NOT staged for commit! If it is staged, immediately alert the user and recommend running `git reset HEAD lingo-app/.env`\n\nProvide a clear security report with:\n- ✅ Items that pass security checks\n- ⚠️ Items that need attention\n- 🚨 Critical security issues that must be fixed immediately\n\nBe thorough and specific in your findings."
+  }
+}

@@ -1,0 +1,36 @@
+# Environment variables (NEVER commit these!)
+.env
+.env.local
+.env.production
+lingo-app/.env
+lingo-app/.env.local
+lingo-app/.env.production
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Editor files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Node modules
+node_modules/
+lingo-app/node_modules/
+
+# Build outputs
+dist/
+lingo-app/dist/
+build/
+
+# Logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+
+# IMPORTANT: Include .kiro folder for competition
+# (This is intentionally NOT ignored - we want to commit it)
+# !.kiro/

@@ -1,0 +1,8 @@
+{
+  "name": "Update Documentation",
+  "description": "Reminds to update documentation when major components are modified",
+  "eventType": "fileEdited",
+  "filePatterns": "lingo-app/src/components/Windows/*.jsx",
+  "hookAction": "askAgent",
+  "outputPrompt": "📝 Window component modified: {filename}\n\nPlease check if documentation needs updating:\n\n1. Review ARCHITECTURE.md - Does the component structure section need updates?\n2. Review FEATURES.md - Are there new features to document?\n3. Check if QUICK_REFERENCE.md needs updates for user-facing changes\n\nSummarize what changed and suggest documentation updates if needed."
+}

@@ -1,0 +1,8 @@
+{
+  "name": "Environment Sync Check",
+  "description": "Ensures .env.example stays in sync when .env is modified",
+  "eventType": "fileEdited",
+  "filePatterns": "lingo-app/.env",
+  "hookAction": "askAgent",
+  "outputPrompt": "⚙️ Environment file modified!\n\nPlease verify:\n1. Compare .env with .env.example\n2. Check if new variables need to be added to .env.example (with placeholder values)\n3. Ensure no sensitive values are accidentally committed\n4. Update FIREBASE_SETUP.md if new Firebase variables were added\n\nReport any discrepancies and suggest updates."
+}

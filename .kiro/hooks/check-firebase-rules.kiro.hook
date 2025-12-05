@@ -1,0 +1,8 @@
+{
+  "name": "Firebase Security Check",
+  "description": "Reviews Firebase service changes for security best practices",
+  "eventType": "fileEdited",
+  "filePatterns": "lingo-app/src/services/firebase.js",
+  "hookAction": "askAgent",
+  "outputPrompt": "🔒 Firebase service modified!\n\nSecurity checklist:\n- Are API keys properly using environment variables?\n- Are database operations using proper authentication checks?\n- Are there any exposed sensitive operations?\n- Is error handling implemented to avoid leaking information?\n\nReview the changes in {filename} and report any security concerns."
+}

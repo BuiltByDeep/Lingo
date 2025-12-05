@@ -1,0 +1,8 @@
+{
+  "name": "Hook Dependency Validator",
+  "description": "Validates React hook dependencies when custom hooks are modified",
+  "eventType": "fileEdited",
+  "filePatterns": "lingo-app/src/hooks/*.js",
+  "hookAction": "askAgent",
+  "outputPrompt": "🪝 Custom hook modified: {filename}\n\nValidate:\n- useEffect/useCallback/useMemo dependency arrays are complete\n- No missing dependencies that could cause stale closures\n- No unnecessary dependencies causing extra re-renders\n- Cleanup functions are properly implemented\n- Hook follows React hooks rules\n\nRun ESLint and report any dependency warnings or errors."
+}

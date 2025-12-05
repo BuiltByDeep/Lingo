@@ -1,0 +1,8 @@
+{
+  "name": "Build Verification",
+  "description": "Runs a production build check when critical files are modified",
+  "eventType": "fileEdited",
+  "filePatterns": "lingo-app/{vite.config.js,package.json,src/main.jsx}",
+  "hookAction": "askAgent",
+  "outputPrompt": "🏗️ Critical build file modified: {filename}\n\nPlease run a build check:\n```\nnpm run build\n```\n\nVerify:\n- Build completes without errors\n- No circular dependencies\n- Bundle size is reasonable\n- All environment variables are properly prefixed with VITE_\n\nReport build status and any issues."
+}

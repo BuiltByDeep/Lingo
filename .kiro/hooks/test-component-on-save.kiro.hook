@@ -1,0 +1,16 @@
+{
+  "enabled": true,
+  "name": "Component Test Runner",
+  "description": "Automatically runs tests for React components when .jsx files in src/components/ are saved, checking for render errors, prop handling, user interactions, and accessibility compliance",
+  "version": "1",
+  "when": {
+    "type": "fileEdited",
+    "patterns": [
+      "lingo-app/src/components/**/*.jsx"
+    ]
+  },
+  "then": {
+    "type": "askAgent",
+    "prompt": "🧪 Component modified - Running tests...\n\nTesting: {filename}\n\nPlease run the following command to test this component:\n```\nnpm test -- {filename}\n```\n\nCheck for:\n- Component renders without errors\n- Props are handled correctly\n- User interactions work as expected\n- Accessibility compliance\n\nAnalyze the test results and report any issues found. If tests don't exist for this component, suggest creating appropriate test cases."
+  }
+}
